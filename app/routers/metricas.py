@@ -6,7 +6,7 @@ from app.services.profiles.scraper_profile_tiktok import ProfileTikTokScraper
 
 from app.services.publicaciones.scraper_facebook import FacebookScraper
 from app.services.publicaciones.scraper_instagram import InstagramScraper
-# from services.publicaciones.tiktok_post import TikTokPost
+from app.services.publicaciones.scraper_tiktok1 import TikTokScraper
 
 from pydantic import BaseModel
 
@@ -40,8 +40,8 @@ async def get_metricas_publicacion(request: ProfileRequest):
         service = FacebookScraper()
     elif plataforma == Plataforma.INSTAGRAM:
         service = InstagramScraper()
-    # elif plataforma == Plataforma.TIKTOK:
-    #     service = TikTokPost()
+    elif plataforma == Plataforma.TIKTOK:
+        service = TikTokScraper()
     else:
         raise HTTPException(status_code=400, detail="Plataforma no soportada")
 

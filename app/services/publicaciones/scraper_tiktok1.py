@@ -7,7 +7,7 @@ import re
 import json
 import time
 
-class InstagramScraper:
+class TikTokScraper:
     def __init__(self, headless=True):
         chrome_options = Options()
         
@@ -16,8 +16,7 @@ class InstagramScraper:
         
         chrome_options.add_argument('--no-sandbox')
         chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
-        chrome_options.add_argument('--window-size=400,700')
+        chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')        
         chrome_options.add_argument('--disable-notifications')
         
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
@@ -25,9 +24,9 @@ class InstagramScraper:
         
         self.driver = webdriver.Chrome(options=chrome_options)
         self.wait = WebDriverWait(self.driver, 15)
-        self.driver.set_window_size(400, 700)
     
-    def extract_all_metrics_single_page_instagram(self, url: str) -> dict:
+        
+    def extract_all_metrics_single_page_tiktok(self, url: str) -> dict:
         """
         Extrae TODAS las métricas (likes y comentarios) en una sola carga de página
         usando la misma ventana y vista
@@ -55,16 +54,16 @@ class InstagramScraper:
             
             # Extraer TODAS las métricas de la misma vista
             print("\n🔍 Extrayendo métricas de la misma vista...")
-            likes = self._find_likes_instagram()
-            comments = self._find_comments_instagram()
-            
-            # También podemos extraer otras métricas si están disponibles
-            shares = self._find_shares()
+            likes = self._find_likes_tiktok()
+            comments = self._find_comments_tiktok()
+            saves = self._find_saves_tiktok()
+            shares = self._find_shares_tiktok()
             
             result = {
                 'url': url,
                 'likes': likes,
                 'comments': comments,
+                'saves': saves,
                 'shares': shares,
                 'status': 'success',
                 'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
@@ -93,135 +92,118 @@ class InstagramScraper:
         
         # Scroll adicional si es necesario
         time.sleep(2)
+
     
-    def _find_likes_instagram(self) -> int:
-        """Busca likes en la vista actual"""
-        print("\n❤️  BUSCANDO LIKES...")
-        
-        # Estrategia 1: Buscar por texto "Me gusta"
+    def _find_likes_tiktok(self) -> int:
+        """Extrae likes con el nuevo DOM de TikTok usando <strong data-e2e='like-count'>."""
+        print("\n BUSCANDO LIKES (Nuevo DOM TikTok)...")
+
         try:
-            elements_with_likes = self.driver.find_elements(By.XPATH, "//*[contains(text(), 'Me gusta')]")
-            print(f"   Encontrados {len(elements_with_likes)} elementos con 'Me gusta'")
-            
-            for i, element in enumerate(elements_with_likes):
-                try:
-                    full_text = element.text
-                    if full_text.strip():  # Solo si tiene texto
-                        print(f"   Elemento {i+1}: '{full_text}'")
-                        
-                        match = re.search(r'(\d+[\d,]*)\s*Me gusta', full_text)
-                        if match:
-                            likes_str = match.group(1).replace(',', '')
-                            print(f"   ✅ LIKES ENCONTRADOS: {likes_str}")
-                            return int(likes_str)
-                        
-                except Exception as e:
-                    continue
-                    
+            strong = self.driver.find_element(
+                By.XPATH,
+                "//strong[@data-e2e='like-count']"
+            )
+
+            raw = strong.text.strip()  # Ej: "219", "1.3K", "2.5M"
+            print(f"   🔍 Texto encontrado en <strong>: {raw}")
+
+            number = self._convert_tiktok_number(raw)
+
+            print(f"   ✅ Likes extraídos: {number}")
+            return number
+
         except Exception as e:
-            print(f"   Error en búsqueda de likes: {e}")
-        
-        # Estrategia 2: Buscar elementos con clases específicas de likes
-        try:
-            like_selectors = [
-                "//span[contains(@class, 'x193iq5w')]",
-                "//div[contains(@class, 'like')]",
-                "//a[contains(@class, 'like')]"
-            ]
-            
-            for selector in like_selectors:
-                elements = self.driver.find_elements(By.XPATH, selector)
-                for element in elements:
-                    text = element.text
-                    if 'Me gusta' in text:
-                        numbers = re.findall(r'\d+', text)
-                        if numbers:
-                            print(f"   ✅ LIKES ENCONTRADOS: {numbers[0]}")
-                            return int(numbers[0])
-                            
-        except Exception as e:
-            print(f"   Error en búsqueda alternativa de likes: {e}")
-        
-        print("   ❌ No se encontraron likes")
+            print(f"   ❌ Error extrayendo likes: {e}")
+
         return 0
+
+
+    def _convert_tiktok_number(self, value: str) -> int:
+        value = value.upper().replace(",", "").strip()
+
+        if value.endswith("K"):
+            return int(float(value[:-1]) * 1000)
+        if value.endswith("M"):
+            return int(float(value[:-1]) * 1_000_000)
+
+        return int(float(value))
+
     
-    
-    def _find_comments_instagram(self) -> int:
-        """Busca comentarios en la vista actual"""
-        print("\n💬 BUSCANDO COMENTARIOS...")
-        
-        # Estrategia 1: Buscar por texto "comentarios"
+    def _find_saves_tiktok(self) -> int:
+        """Extrae la cantidad de guardados (Favoritos) usando el nuevo DOM de TikTok."""
+        print("\n💾 BUSCANDO GUARDADOS (Nuevo DOM TikTok)...")
+
         try:
-            elements_with_comments = self.driver.find_elements(By.XPATH, 
-                "//*[contains(text(), 'comentarios') or contains(text(), 'comentario')]")
-            print(f"   Encontrados {len(elements_with_comments)} elementos con 'comentarios'")
-            
-            for i, element in enumerate(elements_with_comments):
-                try:
-                    full_text = element.text
-                    if full_text.strip():
-                        print(f"   Elemento {i+1}: '{full_text}'")
-                        
-                        # Buscar "Ver los X comentarios" o "X comentarios"
-                        match = re.search(r'(\d+[\d,]*)\s*comentarios', full_text, re.IGNORECASE)
-                        if match:
-                            comments_str = match.group(1).replace(',', '')
-                            print(f"   ✅ COMENTARIOS ENCONTRADOS: {comments_str}")
-                            return int(comments_str)
-                            
-                except Exception as e:
-                    continue
-                    
+            strong = self.driver.find_element(
+                By.XPATH,
+                "//strong[@data-e2e='undefined-count']"
+            )
+
+            raw = strong.text.strip()  # Ej: "148", "1.2K", "3M"
+            print(f"   🔍 Texto encontrado en <strong>: {raw}")
+
+            number = self._convert_tiktok_number(raw)
+
+            print(f"   ✅ Guardados extraídos: {number}")
+            return number
+
         except Exception as e:
-            print(f"   Error en búsqueda de comentarios: {e}")
-        
-        # Estrategia 2: Buscar por clases específicas de comentarios
-        try:
-            comment_selectors = [
-                "//span[contains(@class, 'x1lliihq')]",
-                "//span[contains(@class, 'x1plvlek')]",
-                "//a[contains(@class, 'comment')]",
-                "//div[contains(@class, 'comment')]"
-            ]
-            
-            for selector in comment_selectors:
-                elements = self.driver.find_elements(By.XPATH, selector)
-                for element in elements:
-                    text = element.text
-                    if 'comentario' in text.lower():
-                        numbers = re.findall(r'\d+', text)
-                        if numbers:
-                            print(f"   ✅ COMENTARIOS ENCONTRADOS: {numbers[0]}")
-                            return int(numbers[0])
-                            
-        except Exception as e:
-            print(f"   Error en búsqueda alternativa de comentarios: {e}")
-        
-        print("   ❌ No se encontraron comentarios")
+            print(f"   ❌ Error extrayendo guardados: {e}")
+
         return 0
+
+
+    
+    
+    def _find_comments_tiktok(self) -> int:
+        """Extrae comentarios con el nuevo DOM de TikTok usando <strong data-e2e='comment-count'>."""
+        print("\n💬 BUSCANDO COMENTARIOS (Nuevo DOM TikTok)...")
+
+        try:
+            strong = self.driver.find_element(
+                By.XPATH,
+                "//strong[@data-e2e='comment-count']"
+            )
+
+            raw = strong.text.strip()  # Ej: "21", "1.3K", "2.5M"
+            print(f"   🔍 Texto encontrado en <strong>: {raw}")
+
+            number = self._convert_tiktok_number(raw)
+
+            print(f"   ✅ Comentarios extraídos: {number}")
+            return number
+
+        except Exception as e:
+            print(f"   ❌ Error extrayendo comentarios: {e}")
+
+        return 0
+
      
     
-    def _find_shares(self) -> int:
-        """Busca shares en la vista actual (si están disponibles)"""
-        print("\n🔄 BUSCANDO SHARES...")
-        
+    def _find_shares_tiktok(self) -> int:
+        """Extrae la cantidad de compartidos usando el nuevo DOM de TikTok."""
+        print("\n🔗 BUSCANDO COMPARTIDOS (Nuevo DOM TikTok)...")
+
         try:
-            elements_with_shares = self.driver.find_elements(By.XPATH,
-                "//*[contains(text(), 'compartido') or contains(text(), 'compartir') or contains(text(), 'share')]")
-            
-            for element in elements_with_shares:
-                text = element.text
-                match = re.search(r'(\d+[\d,]*)\s*(?:compartido|compartir|share)', text, re.IGNORECASE)
-                if match:
-                    shares_str = match.group(1).replace(',', '')
-                    print(f"   ✅ SHARES ENCONTRADOS: {shares_str}")
-                    return int(shares_str)
-                    
+            strong = self.driver.find_element(
+                By.XPATH,
+                "//strong[@data-e2e='share-count']"
+            )
+
+            raw = strong.text.strip()  # Ej: "21", "1.2K", "3M"
+            print(f"   🔍 Texto encontrado en <strong>: {raw}")
+
+            number = self._convert_tiktok_number(raw)
+
+            print(f"   ✅ Compartidos extraídos: {number}")
+            return number
+
         except Exception as e:
-            print(f"   Error en búsqueda de shares: {e}")
-        
-        print("   ❌ No se encontraron shares")
+            print(f"   ❌ Error extrayendo compartidos: {e}")
+
         return 0
+
+
     
     def analyze_page_content(self):
         """Función de análisis para debugging - muestra qué elementos hay en la página"""
@@ -287,7 +269,7 @@ class InstagramScraper:
         try:
             # 2. Llamada al método de extracción central (simulado)
             # ¡SOLO UNA LLAMADA! Extrae todo en la misma página
-            result = self.extract_all_metrics_single_page_instagram(url)
+            result = self.extract_all_metrics_single_page_tiktok(url)
             
             # 3. Mostrar y verificar resultados
             print("\n" + "="*60)
